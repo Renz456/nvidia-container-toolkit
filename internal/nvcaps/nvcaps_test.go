@@ -39,7 +39,8 @@ func TestProcessMinorsFile(t *testing.T) {
 	for i, tc := range testCases {
 		t.Run(fmt.Sprintf("testcase %d", i), func(t *testing.T) {
 			contents := strings.NewReader(strings.Join(tc.lines, "\n"))
-			d := processMinorsFile(contents)
+			d, err := processMinorsFile(contents)
+			require.NoError(t, err)
 			require.Equal(t, tc.expected, d)
 		})
 	}

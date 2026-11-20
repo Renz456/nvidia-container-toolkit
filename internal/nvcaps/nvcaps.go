@@ -28,8 +28,7 @@ import (
 )
 
 const (
-	nvidiaProcDriverPath   = "/proc/driver/nvidia"
-	nvidiaCapabilitiesPath = nvidiaProcDriverPath + "/capabilities"
+	nvidiaProcDriverPath = "/proc/driver/nvidia"
 
 	nvcapsProcDriverPath = "/proc/driver/nvidia-caps"
 	nvcapsMigMinorsPath  = nvcapsProcDriverPath + "/mig-minors"
@@ -89,10 +88,14 @@ func NewMigCapsFromRoot(root string) (MigCaps, error) {
 	}
 	defer minorsFile.Close()
 
-	return processMinorsFile(minorsFile), nil
+	caps, err := processMinorsFile(minorsFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading MIG minors file: %w", err)
+	}
+	return caps, nil
 }
 
-func processMinorsFile(minorsFile io.Reader) MigCaps {
+func processMinorsFile(minorsFile io.Reader) (MigCaps, error) {
 	// Walk each line of nvcapsMigMinorsPath and construct a mapping of nvidia
 	// capabilities path to device minor for that capability
 	migCaps := make(MigCaps)
@@ -105,7 +108,7 @@ func processMinorsFile(minorsFile io.Reader) MigCaps {
 		}
 		migCaps[cap] = minor
 	}
-	return migCaps
+	return migCaps, scanner.Err()
 }
 
 func processMigMinorsLine(line string) (MigCap, MigMinor, error) {
@@ -139,12 +142,12 @@ func (m MigCap) isValid() bool {
 		// Look for a CI access file. Sscanf stops at the first mismatch, so the
 		// reconstructed name has to be the whole token.
 		n, _ := fmt.Sscanf(cap, "gpu%d/gi%d/ci%d/access", &gpu, &gi, &ci)
-		if n == 3 && m == NewComputeInstanceCap(gpu, gi, ci) {
+		if n == 3 && gpu >= 0 && gi >= 0 && ci >= 0 && m == NewComputeInstanceCap(gpu, gi, ci) {
 			return true
 		}
 		// Look for a GI access file
 		n, _ = fmt.Sscanf(cap, "gpu%d/gi%d/access", &gpu, &gi)
-		if n == 2 && m == NewGPUInstanceCap(gpu, gi) {
+		if n == 2 && gpu >= 0 && gi >= 0 && m == NewGPUInstanceCap(gpu, gi) {
 			return true
 		}
 	}
@@ -153,6 +156,11 @@ func (m MigCap) isValid() bool {
 
 // ProcPath returns the proc path associated with the MIG capability
 func (m MigCap) ProcPath() string {
+	return filepath.Join(nvidiaProcDriverPath, m.RelativeProcPath())
+}
+
+// RelativeProcPath returns the capability record path relative to /proc/driver/nvidia.
+func (m MigCap) RelativeProcPath() string {
 	id := string(m)
 
 	var path string
@@ -163,7 +171,7 @@ func (m MigCap) ProcPath() string {
 		parts := strings.SplitN(id, "/", 2)
 		path = strings.Join([]string{parts[0], "mig", parts[1]}, "/")
 	}
-	return filepath.Join(nvidiaCapabilitiesPath, path)
+	return filepath.Join("capabilities", path)
 }
 
 // DevicePath returns the path for the nvidia-caps device with the specified
